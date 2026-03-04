@@ -136,12 +136,14 @@ describe('ParameterSyncService', () => {
 				pasteLongTextToFileLen: 0,
 				pdfAsImage: true,
 				renderUserContentAsMarkdown: false,
+				viewLogits: true,
 				theme: 'dark'
 			});
 
 			expect(result.pasteLongTextToFileLen).toBe(0);
 			expect(result.pdfAsImage).toBe(true);
 			expect(result.renderUserContentAsMarkdown).toBe(false);
+			expect(result.viewLogits).toBe(true);
 			expect(result.theme).toBeUndefined();
 		});
 	});

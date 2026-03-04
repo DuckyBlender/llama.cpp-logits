@@ -213,6 +213,8 @@ export interface ApiChatCompletionRequest {
 	top_k?: number;
 	top_p?: number;
 	min_p?: number;
+	n_probs?: number;
+	post_sampling_probs?: boolean;
 	xtc_probability?: number;
 	xtc_threshold?: number;
 	typ_p?: number;
@@ -249,6 +251,17 @@ export interface ApiChatCompletionToolCall extends ApiChatCompletionToolCallDelt
 	function?: ApiChatCompletionToolCallFunctionDelta & { arguments?: string };
 }
 
+export interface ApiChatCompletionLogprobsToken {
+	id?: number;
+	token?: string;
+	prob?: number;
+	logprob?: number;
+}
+
+export interface ApiChatCompletionLogprobs {
+	content?: ApiChatCompletionLogprobsToken[];
+}
+
 export interface ApiChatCompletionStreamChunk {
 	object?: string;
 	model?: string;
@@ -261,6 +274,7 @@ export interface ApiChatCompletionStreamChunk {
 			model?: string;
 			tool_calls?: ApiChatCompletionToolCallDelta[];
 		};
+		logprobs?: ApiChatCompletionLogprobs | null;
 		finish_reason?: string | null;
 	}>;
 	timings?: {
@@ -284,6 +298,7 @@ export interface ApiChatCompletionResponse {
 			model?: string;
 			tool_calls?: ApiChatCompletionToolCall[];
 		};
+		logprobs?: ApiChatCompletionLogprobs | null;
 		finish_reason?: string | null;
 	}>;
 }

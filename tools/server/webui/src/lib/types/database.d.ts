@@ -1,4 +1,9 @@
-import type { ChatMessageTimings, ChatRole, ChatMessageType } from '$lib/types/chat';
+import type {
+	ChatMessageTimings,
+	ChatRole,
+	ChatMessageType,
+	ChatTokenProbability
+} from '$lib/types/chat';
 import { AttachmentType } from '$lib/enums';
 
 export interface DatabaseConversation {
@@ -72,6 +77,7 @@ export interface DatabaseMessage {
 	children: string[];
 	extra?: DatabaseMessageExtra[];
 	timings?: ChatMessageTimings;
+	tokenProbabilities?: ChatTokenProbability[];
 	model?: string;
 }
 

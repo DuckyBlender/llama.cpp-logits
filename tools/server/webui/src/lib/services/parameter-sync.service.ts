@@ -137,6 +137,12 @@ export const SYNCABLE_PARAMETERS: SyncableParameter[] = [
 		canSync: true
 	},
 	{
+		key: 'viewLogits',
+		serverKey: 'viewLogits',
+		type: SyncableParameterType.BOOLEAN,
+		canSync: true
+	},
+	{
 		key: 'autoMicOnEmpty',
 		serverKey: 'autoMicOnEmpty',
 		type: SyncableParameterType.BOOLEAN,

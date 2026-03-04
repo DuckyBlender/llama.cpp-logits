@@ -1,5 +1,9 @@
 import type { SETTING_CONFIG_DEFAULT } from '$lib/constants/settings-config';
-import type { ChatMessagePromptProgress, ChatMessageTimings } from './chat';
+import type {
+	ChatMessagePromptProgress,
+	ChatMessageTimings,
+	ChatTokenProbability
+} from './chat';
 import type { DatabaseMessageExtra } from './database';
 import type { ParameterSource, SyncableParameterType, SettingsFieldType } from '$lib/enums';
 
@@ -22,6 +26,8 @@ export interface SettingsChatServiceOptions {
 	systemMessage?: string;
 	// Disable reasoning parsing (use 'none' instead of 'auto')
 	disableReasoningParsing?: boolean;
+	// Enable token probability view and request logits metadata
+	viewLogits?: boolean;
 	// Generation parameters
 	temperature?: number;
 	max_tokens?: number;
@@ -52,6 +58,7 @@ export interface SettingsChatServiceOptions {
 	// Callbacks
 	onChunk?: (chunk: string) => void;
 	onReasoningChunk?: (chunk: string) => void;
+	onTokenProbability?: (tokens: ChatTokenProbability[]) => void;
 	onToolCallChunk?: (chunk: string) => void;
 	onAttachments?: (extras: DatabaseMessageExtra[]) => void;
 	onModel?: (model: string) => void;

@@ -115,6 +115,11 @@
 					type: SettingsFieldType.CHECKBOX
 				},
 				{
+					key: SETTINGS_KEYS.VIEW_LOGITS,
+					label: 'View logits (token confidence colors)',
+					type: SettingsFieldType.CHECKBOX
+				},
+				{
 					key: SETTINGS_KEYS.FULL_HEIGHT_CODE_BLOCKS,
 					label: 'Use full height code blocks',
 					type: SettingsFieldType.CHECKBOX

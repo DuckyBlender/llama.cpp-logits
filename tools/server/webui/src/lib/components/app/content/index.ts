@@ -30,6 +30,7 @@
  * ```
  */
 export { default as MarkdownContent } from './MarkdownContent.svelte';
+export { default as TokenProbabilityContent } from './TokenProbabilityContent.svelte';
 
 /**
  * **SyntaxHighlightedCode** - Code syntax highlighting

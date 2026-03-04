@@ -4,7 +4,8 @@
 		ChatMessageStatistics,
 		MarkdownContent,
 		ModelBadge,
-		ModelsSelector
+		ModelsSelector,
+		TokenProbabilityContent
 	} from '$lib/components/app';
 	import ChatMessageThinkingBlock from './ChatMessageThinkingBlock.svelte';
 	import { getMessageEditContext } from '$lib/contexts';
@@ -298,6 +299,11 @@
 	{:else if message.role === MessageRole.ASSISTANT}
 		{#if showRawOutput}
 			<pre class="raw-output">{messageContent || ''}</pre>
+		{:else if currentConfig.viewLogits}
+			<TokenProbabilityContent
+				content={visibleMessageContent || ''}
+				tokenProbabilities={message.tokenProbabilities}
+			/>
 		{:else}
 			<MarkdownContent content={visibleMessageContent || ''} attachments={message.extra} />
 		{/if}

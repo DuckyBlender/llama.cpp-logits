@@ -7,7 +7,12 @@ import {
 	ReasoningFormat,
 	UrlPrefix
 } from '$lib/enums';
-import type { ApiChatMessageContentPart, ApiChatCompletionToolCall } from '$lib/types/api';
+import type {
+	ApiChatMessageContentPart,
+	ApiChatCompletionToolCall,
+	ApiChatCompletionLogprobsToken
+} from '$lib/types/api';
+import type { ChatTokenProbability } from '$lib/types/chat';
 import { modelsStore } from '$lib/stores/models.svelte';
 import { AGENTIC_REGEX } from '$lib/constants/agentic';
 
@@ -70,6 +75,7 @@ export class ChatService {
 			onComplete,
 			onError,
 			onReasoningChunk,
+			onTokenProbability,
 			onToolCallChunk,
 			onModel,
 			onTimings,
@@ -102,7 +108,8 @@ export class ChatService {
 			custom,
 			timings_per_token,
 			// Config options
-			disableReasoningParsing
+			disableReasoningParsing,
+			viewLogits
 		} = options;
 
 		const normalizedMessages: ApiChatMessageData[] = messages
@@ -216,6 +223,16 @@ export class ChatService {
 			}
 		}
 
+		// View logits mode requires token-level probabilities in each chunk.
+		// Force these after custom params to keep mode reliable.
+		if (viewLogits) {
+			const requestedNProbs = Number(requestBody.n_probs);
+			requestBody.n_probs = Number.isFinite(requestedNProbs)
+				? Math.max(1, requestedNProbs)
+				: 1;
+			requestBody.post_sampling_probs = false;
+		}
+
 		try {
 			const response = await fetch(`./v1/chat/completions`, {
 				method: 'POST',
@@ -241,6 +258,7 @@ export class ChatService {
 					onComplete,
 					onError,
 					onReasoningChunk,
+					onTokenProbability,
 					onToolCallChunk,
 					onModel,
 					onTimings,
@@ -325,6 +343,7 @@ export class ChatService {
 		) => void,
 		onError?: (error: Error) => void,
 		onReasoningChunk?: (chunk: string) => void,
+		onTokenProbability?: (tokens: ChatTokenProbability[]) => void,
 		onToolCallChunk?: (chunk: string) => void,
 		onModel?: (model: string) => void,
 		onTimings?: (timings?: ChatMessageTimings, promptProgress?: ChatMessagePromptProgress) => void,
@@ -417,6 +436,7 @@ export class ChatService {
 							const parsed: ApiChatCompletionStreamChunk = JSON.parse(data);
 							const content = parsed.choices[0]?.delta?.content;
 							const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
+							const logprobs = parsed.choices[0]?.logprobs?.content;
 							const toolCalls = parsed.choices[0]?.delta?.tool_calls;
 							const timings = parsed.timings;
 							const promptProgress = parsed.prompt_progress;
@@ -441,6 +461,11 @@ export class ChatService {
 								aggregatedContent += content;
 								if (!abortSignal?.aborted) {
 									onChunk?.(content);
+									const tokenProbabilities =
+										ChatService.extractTokenProbabilities(logprobs);
+									if (tokenProbabilities.length > 0) {
+										onTokenProbability?.(tokenProbabilities);
+									}
 								}
 							}
 
@@ -880,5 +905,43 @@ export class ChatService {
 		if (!onTimingsCallback || (!timings && !promptProgress)) return;
 
 		onTimingsCallback(timings, promptProgress);
+	}
+
+	private static extractTokenProbabilities(
+		logprobs?: ApiChatCompletionLogprobsToken[] | null
+	): ChatTokenProbability[] {
+		if (!logprobs || !Array.isArray(logprobs)) {
+			return [];
+		}
+
+		const output: ChatTokenProbability[] = [];
+
+		for (const tokenLogprob of logprobs) {
+			if (!tokenLogprob || typeof tokenLogprob.token !== 'string') {
+				continue;
+			}
+
+			let probability: number | undefined;
+
+			if (typeof tokenLogprob.prob === 'number' && Number.isFinite(tokenLogprob.prob)) {
+				probability = tokenLogprob.prob;
+			} else if (
+				typeof tokenLogprob.logprob === 'number' &&
+				Number.isFinite(tokenLogprob.logprob)
+			) {
+				probability = Math.exp(tokenLogprob.logprob);
+			}
+
+			if (probability === undefined || !Number.isFinite(probability)) {
+				continue;
+			}
+
+			output.push({
+				token: tokenLogprob.token,
+				probability: Math.max(0, Math.min(1, probability))
+			});
+		}
+
+		return output;
 	}
 }

@@ -37,6 +37,7 @@ import {
 import type {
 	ChatMessageTimings,
 	ChatMessagePromptProgress,
+	ChatTokenProbability,
 	ChatStreamCallbacks,
 	ErrorDialogState
 } from '$lib/types/chat';
@@ -62,7 +63,10 @@ class ChatStore {
 	errorDialogState = $state<ErrorDialogState | null>(null);
 	isLoading = $state(false);
 	chatLoadingStates = new SvelteMap<string, boolean>();
-	chatStreamingStates = new SvelteMap<string, { response: string; messageId: string }>();
+	chatStreamingStates = new SvelteMap<
+		string,
+		{ response: string; messageId: string; tokenProbabilities?: ChatTokenProbability[] }
+	>();
 	private abortControllers = new SvelteMap<string, AbortController>();
 	private processingStates = new SvelteMap<string, ApiProcessingState | null>();
 	private conversationStateTimestamps = new SvelteMap<string, ConversationStateEntry>();
@@ -87,16 +91,23 @@ class ChatStore {
 			if (convId === conversationsStore.activeConversation?.id) this.isLoading = false;
 		}
 	}
-	private setChatStreaming(convId: string, response: string, messageId: string): void {
+	private setChatStreaming(
+		convId: string,
+		response: string,
+		messageId: string,
+		tokenProbabilities?: ChatTokenProbability[]
+	): void {
 		this.touchConversationState(convId);
-		this.chatStreamingStates.set(convId, { response, messageId });
+		this.chatStreamingStates.set(convId, { response, messageId, tokenProbabilities });
 		if (convId === conversationsStore.activeConversation?.id) this.currentResponse = response;
 	}
 	private clearChatStreaming(convId: string): void {
 		this.chatStreamingStates.delete(convId);
 		if (convId === conversationsStore.activeConversation?.id) this.currentResponse = '';
 	}
-	private getChatStreaming(convId: string): { response: string; messageId: string } | undefined {
+	private getChatStreaming(
+		convId: string
+	): { response: string; messageId: string; tokenProbabilities?: ChatTokenProbability[] } | undefined {
 		return this.chatStreamingStates.get(convId);
 	}
 	syncLoadingStateForChat(convId: string): void {
@@ -109,7 +120,10 @@ class ChatStore {
 		if (s?.response && s?.messageId) {
 			const idx = conversationsStore.findMessageIndex(s.messageId);
 			if (idx !== -1) {
-				conversationsStore.updateMessageAtIndex(idx, { content: s.response });
+				conversationsStore.updateMessageAtIndex(idx, {
+					content: s.response,
+					tokenProbabilities: s.tokenProbabilities
+				});
 			}
 		}
 	}
@@ -235,7 +249,9 @@ class ChatStore {
 		return Array.from(this.chatStreamingStates.keys());
 	}
 
-	getChatStreamingPublic(convId: string): { response: string; messageId: string } | undefined {
+	getChatStreamingPublic(
+		convId: string
+	): { response: string; messageId: string; tokenProbabilities?: ChatTokenProbability[] } | undefined {
 		return this.getChatStreaming(convId);
 	}
 
@@ -456,6 +472,7 @@ class ChatStore {
 				content: '',
 				timestamp: Date.now(),
 				toolCalls: '',
+				tokenProbabilities: [],
 				children: [],
 				model: null
 			},
@@ -559,6 +576,9 @@ class ChatStore {
 		let streamedExtras: DatabaseMessageExtra[] = assistantMessage.extra
 			? JSON.parse(JSON.stringify(assistantMessage.extra))
 			: [];
+		let streamedTokenProbabilities: ChatTokenProbability[] = assistantMessage.tokenProbabilities
+			? JSON.parse(JSON.stringify(assistantMessage.tokenProbabilities))
+			: [];
 		const recordModel = (modelName: string | null | undefined, persistImmediately = true): void => {
 			if (!modelName) return;
 			const n = normalizeModelName(modelName);
@@ -575,9 +595,17 @@ class ChatStore {
 			}
 		};
 		const updateStreamingContent = () => {
-			this.setChatStreaming(assistantMessage.convId, streamedContent, assistantMessage.id);
+			this.setChatStreaming(
+				assistantMessage.convId,
+				streamedContent,
+				assistantMessage.id,
+				streamedTokenProbabilities
+			);
 			const idx = conversationsStore.findMessageIndex(assistantMessage.id);
-			conversationsStore.updateMessageAtIndex(idx, { content: streamedContent });
+			conversationsStore.updateMessageAtIndex(idx, {
+				content: streamedContent,
+				tokenProbabilities: streamedTokenProbabilities
+			});
 		};
 		const appendContentChunk = (chunk: string) => {
 			if (isReasoningOpen) {
@@ -609,6 +637,11 @@ class ChatStore {
 		const streamCallbacks: ChatStreamCallbacks = {
 			onChunk: (chunk: string) => appendContentChunk(chunk),
 			onReasoningChunk: (chunk: string) => appendReasoningChunk(chunk),
+			onTokenProbability: (tokens: ChatTokenProbability[]) => {
+				if (!tokens.length) return;
+				streamedTokenProbabilities = [...streamedTokenProbabilities, ...tokens];
+				updateStreamingContent();
+			},
 			onToolCallChunk: (chunk: string) => {
 				const c = chunk.trim();
 				if (!c) return;
@@ -660,6 +693,9 @@ class ChatStore {
 					timings
 				};
 				if (streamedExtras.length > 0) updateData.extra = streamedExtras;
+				if (streamedTokenProbabilities.length > 0) {
+					updateData.tokenProbabilities = streamedTokenProbabilities;
+				}
 				if (resolvedModel && !modelPersisted) updateData.model = resolvedModel;
 				await DatabaseService.updateMessage(assistantMessage.id, updateData);
 				const idx = conversationsStore.findMessageIndex(assistantMessage.id);
@@ -668,6 +704,9 @@ class ChatStore {
 					toolCalls: updateData.toolCalls as string
 				};
 				if (streamedExtras.length > 0) uiUpdate.extra = streamedExtras;
+				if (streamedTokenProbabilities.length > 0) {
+					uiUpdate.tokenProbabilities = streamedTokenProbabilities;
+				}
 				if (timings) uiUpdate.timings = timings;
 				if (resolvedModel) uiUpdate.model = resolvedModel;
 				conversationsStore.updateMessageAtIndex(idx, uiUpdate);
@@ -747,9 +786,16 @@ class ChatStore {
 		const lastMessage = messages[messages.length - 1];
 		if (lastMessage?.role === MessageRole.ASSISTANT) {
 			try {
-				const updateData: { content: string; timings?: ChatMessageTimings } = {
+				const updateData: {
+					content: string;
+					timings?: ChatMessageTimings;
+					tokenProbabilities?: ChatTokenProbability[];
+				} = {
 					content: streamingState.response
 				};
+				if (streamingState.tokenProbabilities?.length) {
+					updateData.tokenProbabilities = [...streamingState.tokenProbabilities];
+				}
 				const lastKnownState = this.getProcessingState(conversationId);
 				if (lastKnownState) {
 					updateData.timings = {
@@ -765,9 +811,15 @@ class ChatStore {
 				}
 				await DatabaseService.updateMessage(lastMessage.id, updateData);
 				lastMessage.content = streamingState.response;
+				if (updateData.tokenProbabilities) {
+					lastMessage.tokenProbabilities = updateData.tokenProbabilities;
+				}
 				if (updateData.timings) lastMessage.timings = updateData.timings;
 			} catch (error) {
 				lastMessage.content = streamingState.response;
+				if (streamingState.tokenProbabilities?.length) {
+					lastMessage.tokenProbabilities = [...streamingState.tokenProbabilities];
+				}
 				console.error('Failed to save partial response:', error);
 			}
 		}
@@ -1017,10 +1069,21 @@ class ChatStore {
 			let appendedContent = '',
 				hasReceivedContent = false,
 				isReasoningOpen = hasUnclosedReasoningTag(originalContent);
+			let appendedTokenProbabilities: ChatTokenProbability[] = [];
+			const existingTokenProbabilities: ChatTokenProbability[] = msg.tokenProbabilities
+				? [...msg.tokenProbabilities]
+				: [];
 
 			const updateStreamingContent = (fullContent: string) => {
-				this.setChatStreaming(msg.convId, fullContent, msg.id);
-				conversationsStore.updateMessageAtIndex(idx, { content: fullContent });
+				const mergedTokenProbabilities = [
+					...existingTokenProbabilities,
+					...appendedTokenProbabilities
+				];
+				this.setChatStreaming(msg.convId, fullContent, msg.id, mergedTokenProbabilities);
+				conversationsStore.updateMessageAtIndex(idx, {
+					content: fullContent,
+					tokenProbabilities: mergedTokenProbabilities
+				});
 			};
 
 			const appendContentChunk = (chunk: string) => {
@@ -1058,6 +1121,11 @@ class ChatStore {
 					...this.getApiOptions(),
 					onChunk: (chunk: string) => appendContentChunk(chunk),
 					onReasoningChunk: (chunk: string) => appendReasoningChunk(chunk),
+					onTokenProbability: (tokens: ChatTokenProbability[]) => {
+						if (!tokens.length) return;
+						appendedTokenProbabilities = [...appendedTokenProbabilities, ...tokens];
+						updateStreamingContent(originalContent + appendedContent);
+					},
 					onTimings: (timings?: ChatMessageTimings, promptProgress?: ChatMessagePromptProgress) => {
 						const tokensPerSecond =
 							timings?.predicted_ms && timings?.predicted_n
@@ -1086,17 +1154,23 @@ class ChatStore {
 							? appendedContent
 							: wrapReasoningContent(finalContent || '', reasoningContent);
 						const fullContent = originalContent + appendedFromCompletion;
+						const mergedTokenProbabilities = [
+							...existingTokenProbabilities,
+							...appendedTokenProbabilities
+						];
 
 						await DatabaseService.updateMessage(msg.id, {
 							content: fullContent,
 							timestamp: Date.now(),
-							timings
+							timings,
+							tokenProbabilities: mergedTokenProbabilities
 						});
 
 						conversationsStore.updateMessageAtIndex(idx, {
 							content: fullContent,
 							timestamp: Date.now(),
-							timings
+							timings,
+							tokenProbabilities: mergedTokenProbabilities
 						});
 
 						conversationsStore.updateConversationTimestamp();
@@ -1108,14 +1182,20 @@ class ChatStore {
 					onError: async (error: Error) => {
 						if (isAbortError(error)) {
 							if (hasReceivedContent && appendedContent) {
+								const mergedTokenProbabilities = [
+									...existingTokenProbabilities,
+									...appendedTokenProbabilities
+								];
 								await DatabaseService.updateMessage(msg.id, {
 									content: originalContent + appendedContent,
-									timestamp: Date.now()
+									timestamp: Date.now(),
+									tokenProbabilities: mergedTokenProbabilities
 								});
 
 								conversationsStore.updateMessageAtIndex(idx, {
 									content: originalContent + appendedContent,
-									timestamp: Date.now()
+									timestamp: Date.now(),
+									tokenProbabilities: mergedTokenProbabilities
 								});
 							}
 
@@ -1127,9 +1207,15 @@ class ChatStore {
 						}
 
 						console.error('Continue generation error:', error);
-						conversationsStore.updateMessageAtIndex(idx, { content: originalContent });
+						conversationsStore.updateMessageAtIndex(idx, {
+							content: originalContent,
+							tokenProbabilities: existingTokenProbabilities
+						});
 
-						await DatabaseService.updateMessage(msg.id, { content: originalContent });
+						await DatabaseService.updateMessage(msg.id, {
+							content: originalContent,
+							tokenProbabilities: existingTokenProbabilities
+						});
 
 						this.setChatLoading(msg.convId, false);
 						this.clearChatStreaming(msg.convId);
@@ -1174,6 +1260,7 @@ class ChatStore {
 						role: msg.role,
 						content: newContent,
 						toolCalls: msg.toolCalls || '',
+						tokenProbabilities: [],
 						children: [],
 						model: msg.model
 					},
@@ -1182,9 +1269,15 @@ class ChatStore {
 
 				await conversationsStore.updateCurrentNode(newMessage.id);
 			} else {
-				await DatabaseService.updateMessage(msg.id, { content: newContent });
+				await DatabaseService.updateMessage(msg.id, {
+					content: newContent,
+					tokenProbabilities: []
+				});
 				await conversationsStore.updateCurrentNode(msg.id);
-				conversationsStore.updateMessageAtIndex(idx, { content: newContent });
+				conversationsStore.updateMessageAtIndex(idx, {
+					content: newContent,
+					tokenProbabilities: []
+				});
 			}
 
 			conversationsStore.updateConversationTimestamp();
@@ -1455,6 +1548,7 @@ class ChatStore {
 		if (currentConfig.systemMessage) apiOptions.systemMessage = currentConfig.systemMessage;
 
 		if (currentConfig.disableReasoningParsing) apiOptions.disableReasoningParsing = true;
+		if (currentConfig.viewLogits) apiOptions.viewLogits = true;
 
 		if (hasValue(currentConfig.temperature))
 			apiOptions.temperature = Number(currentConfig.temperature);

@@ -19,6 +19,7 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	pdfAsImage: false,
 	disableAutoScroll: false,
 	renderUserContentAsMarkdown: false,
+	viewLogits: false,
 	alwaysShowSidebarOnDesktop: false,
 	autoShowSidebarOnNewChat: true,
 	autoMicOnEmpty: false,
@@ -108,6 +109,8 @@ export const SETTING_CONFIG_INFO: Record<string, string> = {
 	disableAutoScroll:
 		'Disable automatic scrolling while messages stream so you can control the viewport position manually.',
 	renderUserContentAsMarkdown: 'Render user messages using markdown formatting in the chat.',
+	viewLogits:
+		'Render assistant output as token-by-token logits confidence colors (dark red = low confidence, light green = high confidence).',
 	alwaysShowSidebarOnDesktop:
 		'Always keep the sidebar visible on desktop instead of auto-hiding it.',
 	autoShowSidebarOnNewChat:

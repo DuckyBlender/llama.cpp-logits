@@ -59,11 +59,20 @@ export interface ChatMessageTimings {
 }
 
 /**
+ * Token-level probability metadata used by logits view rendering.
+ */
+export interface ChatTokenProbability {
+	token: string;
+	probability: number;
+}
+
+/**
  * Callbacks for streaming chat responses
  */
 export interface ChatStreamCallbacks {
 	onChunk?: (chunk: string) => void;
 	onReasoningChunk?: (chunk: string) => void;
+	onTokenProbability?: (tokens: ChatTokenProbability[]) => void;
 	onToolCallChunk?: (chunk: string) => void;
 	onAttachments?: (extras: DatabaseMessageExtra[]) => void;
 	onModel?: (model: string) => void;
