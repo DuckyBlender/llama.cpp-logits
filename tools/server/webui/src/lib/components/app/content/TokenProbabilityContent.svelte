@@ -58,7 +58,6 @@
 	}
 
 	.token-probability-chip {
-		border-radius: 0.25rem;
 		padding: 0 0.04rem;
 		box-decoration-break: clone;
 		-webkit-box-decoration-break: clone;
